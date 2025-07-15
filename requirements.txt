@@ -1,1 +1,5 @@
 PyYAML>=6.0
+pytesseract
+Pillow
+sentence-transformers
+faiss-cpu
