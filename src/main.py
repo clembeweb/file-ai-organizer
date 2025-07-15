@@ -57,6 +57,12 @@ class FileAIOrganizerApp(tk.Tk):
         ttk.Label(settings_frame, text="Elimina dopo N giorni:").grid(row=1,column=0,sticky='w',padx=10,pady=5)
         self.days_var = tk.IntVar(value=DEFAULT_RULES['delete_older_than_days'])
         ttk.Entry(settings_frame, textvariable=self.days_var, width=10).grid(row=1,column=1, padx=10, pady=5, sticky='w')
+        self.content_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(settings_frame, text="Raggruppa per contenuto (AI)", variable=self.content_var)\
+            .grid(row=2, column=0, columnspan=2, sticky='w', padx=10, pady=5)
+        self.rename_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(settings_frame, text="Ridenominazione intelligente", variable=self.rename_var)\
+            .grid(row=3, column=0, columnspan=2, sticky='w', padx=10, pady=5)
 
     def browse_dir(self):
         directory = filedialog.askdirectory()
@@ -72,6 +78,8 @@ class FileAIOrganizerApp(tk.Tk):
         exts = [e.strip() if e.strip().startswith('.') else '.'+e.strip() for e in self.ext_var.get().split(',') if e.strip()]
         DEFAULT_RULES['delete_extensions'] = exts
         DEFAULT_RULES['delete_older_than_days'] = max(1, self.days_var.get())
+        DEFAULT_RULES['group_by_content'] = bool(self.content_var.get())
+        DEFAULT_RULES['smart_rename'] = bool(self.rename_var.get())
 
         threading.Thread(target=self._scan_thread, args=(path,), daemon=True).start()
         self.stats_label.config(text="Scansione in corso...")
@@ -82,13 +90,17 @@ class FileAIOrganizerApp(tk.Tk):
             self.actions = actions
             duplicates = sum(1 for a in actions if a['action'] == 'delete_duplicate')
             temps = sum(1 for a in actions if a['action'] == 'delete_temp')
-            moves = sum(1 for a in actions if a['action'] == 'move_to_extension_folder')
-            self.after(0, lambda: self._scan_complete(len(actions), duplicates, temps, moves))
+            moves = sum(1 for a in actions if a['action'].startswith('move_to_'))
+            text_files = len([t for t in actions if 'reason' not in t and 'duplicate_of' not in t])
+            self.after(0, lambda: self._scan_complete(len(actions), duplicates, temps, moves, text_files))
         except Exception as e:
             self.after(0, lambda: messagebox.showerror("Errore scansione", str(e)))
 
-    def _scan_complete(self, total, dup, temp, moves):
-        self.stats_label.config(text=f"Azioni proposte: {total}  | Duplicati: {dup}  | Temp: {temp}  | Spostamenti: {moves}")
+    def _scan_complete(self, total, dup, temp, moves, text_count=0):
+        status = f"Azioni proposte: {total}  | Duplicati: {dup}  | Temp: {temp}  | Spostamenti: {moves}"
+        if text_count:
+            status += f"  | File con testo estratto: {text_count}"
+        self.stats_label.config(text=status)
         self.refresh_review_tab()
 
     def refresh_review_tab(self):
@@ -105,7 +117,7 @@ class FileAIOrganizerApp(tk.Tk):
         if not messagebox.askyesno("Conferma", "Applicare tutte le azioni elencate?"):
             return
         summary = apply_actions(self.actions)
-        messagebox.showinfo("Completato", f"Eliminati: {summary['deleted']}, Spostati: {summary['moved']}, Errori: {summary['errors']}")
+        messagebox.showinfo("Completato", f"Eliminati: {summary['deleted']}, Spostati: {summary['moved']}, Rinominati: {summary.get('renamed', 0)}, Errori: {summary['errors']}")
         self.actions=[]
         self.refresh_review_tab()
         self.stats_label.config(text="Operazioni completate.")
